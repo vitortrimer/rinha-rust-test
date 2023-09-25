@@ -11,11 +11,16 @@ use time::macros::date;
 use time::Date;
 use uuid::Uuid;
 
-#[derive(Serialize)]
+time::serde::format_description!(date_format, Date, "[year]-[month]-[day]");
+
+#[derive(Clone, Serialize)]
 pub struct Person {
     pub id: Uuid,
+    #[serde(rename = "nome")]
     pub name: String,
+    #[serde(rename = "apelido")]
     pub nick: String,
+    #[serde(rename = "nascimento", with = "date_format")]
     pub birthdate: Date,
     pub stack: Vec<String>,
 }
@@ -34,6 +39,7 @@ async fn main() {
         stack: vec!["Swift".to_string(), "Rust".to_string()],
     };
 
+    println!("{}", person.id);
     people.insert(person.id, person);
 
     let app_state: AppState = Arc::new(people);
@@ -51,8 +57,8 @@ async fn main() {
         .unwrap();
 }
 
-async fn search_people(state: State<AppState>) -> impl IntoResponse {
-    (StatusCode::NOT_FOUND, "Returned")
+async fn search_people() -> impl IntoResponse {
+    (StatusCode::NOT_FOUND, "R")
 }
 
 async fn find_person(
@@ -60,7 +66,7 @@ async fn find_person(
     Path(person_id): Path<Uuid>,
 ) -> impl IntoResponse {
     match people.get(&person_id) {
-        Some(person) => Ok(Json(person)),
+        Some(person) => Ok(Json(person.clone())),
         None => Err(StatusCode::NOT_FOUND),
     }
 }
