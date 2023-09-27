@@ -6,8 +6,7 @@ use axum::{
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, sync::Arc};
-use time::macros::date;
+use std::{collections::HashMap, env, net::SocketAddr, sync::Arc};
 use time::Date;
 use tokio::sync::RwLock;
 use uuid::Uuid;
@@ -27,32 +26,84 @@ pub struct Person {
 }
 
 #[derive(Clone, Deserialize)]
+#[serde(try_from = "String")]
+pub struct Name(String);
+
+pub enum NameError {
+    MaxCharacterOverflow,
+}
+
+impl TryFrom<String> for Name {
+    type Error = &'static str;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        if value.len() <= 100 {
+            Ok(Name(value))
+        } else {
+            Err("name is too big")
+        }
+    }
+}
+
+#[derive(Clone, Deserialize)]
+#[serde(try_from = "String")]
+pub struct Nick(String);
+
+impl TryFrom<String> for Nick {
+    type Error = &'static str;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        if value.len() <= 100 {
+            Ok(Self(value))
+        } else {
+            Err("nick is too big")
+        }
+    }
+}
+
+#[derive(Clone, Deserialize)]
+#[serde(try_from = "String")]
+pub struct Tech(String);
+
+impl TryFrom<String> for Tech {
+    type Error = &'static str;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        if value.len() <= 32 {
+            Ok(Self(value))
+        } else {
+            Err("tech is too big")
+        }
+    }
+}
+
+impl From<Tech> for String {
+    fn from(value: Tech) -> Self {
+        value.0
+    }
+}
+
+#[derive(Clone, Deserialize)]
 pub struct NewPerson {
     #[serde(rename = "nome")]
-    pub name: String,
+    pub name: Name,
     #[serde(rename = "apelido")]
-    pub nick: String,
+    pub nick: Nick,
     #[serde(rename = "nascimento", with = "date_format")]
     pub birthdate: Date,
-    pub stack: Option<Vec<String>>,
+    pub stack: Option<Vec<Tech>>,
 }
 
 type AppState = Arc<RwLock<HashMap<Uuid, Person>>>;
 
 #[tokio::main]
 async fn main() {
-    let mut people: HashMap<Uuid, Person> = HashMap::new();
+    let port = env::var("PORT")
+        .ok()
+        .and_then(|port| port.parse::<u16>().ok())
+        .unwrap_or(8080);
 
-    let person = Person {
-        id: Uuid::now_v7(),
-        name: String::from("Vitor Trimer"),
-        nick: String::from("VTR"),
-        birthdate: date!(1995 - 06 - 10),
-        stack: None,
-    };
-
-    people.insert(person.id, person);
-
+    let people: HashMap<Uuid, Person> = HashMap::new();
     let app_state: AppState = Arc::new(RwLock::new(people));
 
     let app = Router::new()
@@ -62,7 +113,7 @@ async fn main() {
         .route("/contagem-pessoas", get(count_people))
         .with_state(app_state);
 
-    axum::Server::bind(&"0.0.0.0:3000".parse().unwrap())
+    axum::Server::bind(&SocketAddr::from(([0, 0, 0, 0], port)))
         .serve(app.into_make_service())
         .await
         .unwrap();
@@ -90,10 +141,12 @@ async fn create_person(
 
     let person = Person {
         id,
-        name: new_person.name,
-        nick: new_person.nick,
+        name: new_person.name.0,
+        nick: new_person.nick.0,
         birthdate: new_person.birthdate,
-        stack: new_person.stack,
+        stack: new_person
+            .stack
+            .map(|stack| stack.into_iter().map(String::from).collect()),
     };
 
     people.write().await.insert(id, person.clone());
